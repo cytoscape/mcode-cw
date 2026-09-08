@@ -9,14 +9,14 @@
  */
 import { useCallback } from 'react'
 
-import type { ApiResult, Cx2 } from '@cytoscape-web/api-types'
+import type { ApiResult, PositionRecord } from '@cytoscape-web/api-types'
 import { useElementApi } from 'cyweb/ElementApi'
-import { useExportApi } from 'cyweb/ExportApi'
 import { useNetworkApi } from 'cyweb/NetworkApi'
+import { useViewportApi } from 'cyweb/ViewportApi'
 import { useVisualStyleApi } from 'cyweb/VisualStyleApi'
 import { useWorkspaceApi } from 'cyweb/WorkspaceApi'
 
-import { buildMcodeResultsText, ClusterExportRow, mcodeColumnName, sliceClusterCx2 } from './mcodeExport'
+import { buildMcodeResultsText, ClusterExportRow, mcodeColumnName } from './mcodeExport'
 import { MCODECluster, MCODEResult } from './mcodeTypes'
 
 export interface McodeResultActions {
@@ -36,7 +36,7 @@ export function useMcodeResultActions(
 ): McodeResultActions {
   const workspaceApi = useWorkspaceApi()
   const networkApi = useNetworkApi()
-  const exportApi = useExportApi()
+  const viewportApi = useViewportApi()
   const elementApi = useElementApi()
   const visualStyleApi = useVisualStyleApi()
 
@@ -115,26 +115,60 @@ export function useMcodeResultActions(
   const createClusterNetwork = useCallback(() => {
     if (!selectedResult || !selectedCluster) return
 
-    // Export the source network to CX2 and slice it down to the cluster, rather
-    // than building an edge list: CX2 carries the original node/edge table
-    // attributes (and visual styles), so the subnetwork preserves them.
+    // The induced subnetwork keeps the source's element ids, table columns,
+    // attribute rows, and node positions, and it is added to the workspace and
+    // made current.
     const clusterName = `${selectedResult.name} (Cluster ${selectedCluster.rank})`
-    const exported = exportApi.exportToCx2(selectedResult.networkId, { networkName: clusterName })
-    if (!exported.success) {
-      console.warn('Failed to export source network:', exported.error.message)
-      return
-    }
-
-    const cxData = sliceClusterCx2(exported.data, selectedCluster.nodes, selectedCluster.nodePositions)
-    const created = networkApi.createNetworkFromCx2({
-      cxData: cxData as unknown as Cx2,
-      addToWorkspace: true,
-      navigate: true,
-    })
+    const created = networkApi.createNetworkFromNodeList(
+      selectedResult.networkId,
+      selectedCluster.nodes,
+      'all',
+      { name: clusterName },
+    )
     if (!created.success) {
       console.warn('Failed to create cluster network:', created.error.message)
+      return
     }
-  }, [selectedResult, selectedCluster, exportApi, networkApi])
+    const clusterNetworkId = created.data.networkId
+
+    // The new network starts with a default style; copy the source network's
+    // active style onto it so the cluster looks like its parent. Styles are
+    // per network in Cytoscape Web, so this is a snapshot: later edits to
+    // either network's style do not reach the other.
+    const sourceStyle = visualStyleApi.getVisualStyle(selectedResult.networkId)
+    if (sourceStyle.success) {
+      const sourceStyles = visualStyleApi.getStyles(selectedResult.networkId)
+      const styleName = sourceStyles.success
+        ? sourceStyles.data.styles.find((s) => s.active)?.name
+        : undefined
+      const applied = visualStyleApi.applyVisualStyle(
+        clusterNetworkId,
+        sourceStyle.data.visualStyle,
+        styleName ? { name: styleName } : undefined,
+      )
+      if (!applied.success) {
+        console.warn('Failed to apply the source style to the cluster network:', applied.error.message)
+      }
+    } else {
+      console.warn('Failed to read the source network style:', sourceStyle.error.message)
+    }
+
+    // Prefer the layout cached from the cluster thumbnail over the source
+    // network's coordinates, so the new network opens laid out as the cluster
+    // was previewed rather than as a scattered slice of the source.
+    const { nodePositions } = selectedCluster
+    if (!nodePositions) return
+    const positions: PositionRecord = {}
+    for (const nodeId of selectedCluster.nodes) {
+      const pos = nodePositions[nodeId]
+      if (pos) positions[nodeId] = [pos.x, pos.y]
+    }
+    if (Object.keys(positions).length === 0) return
+    const moved = viewportApi.updateNodePositions(clusterNetworkId, positions)
+    if (!moved.success) {
+      console.warn('Failed to apply cluster layout to the new network:', moved.error.message)
+    }
+  }, [selectedResult, selectedCluster, networkApi, viewportApi, visualStyleApi])
 
   const exportResult = useCallback(() => {
     if (!selectedResult) return

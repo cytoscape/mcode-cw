@@ -1,7 +1,7 @@
 /**
- * Pure helpers for turning MCODE results into external representations:
- *   - a tab-delimited results report (.txt), mirroring the Java exporter, and
- *   - a cluster subnetwork sliced out of the source network's CX2.
+ * Pure helpers for turning MCODE results into external representations: a
+ * tab-delimited results report (.txt) mirroring the Java exporter, plus the
+ * MCODE node-table column naming shared by the analysis and the UI.
  *
  * These have no React or Cytoscape Web dependencies (they operate on plain
  * data), so they are straightforward to unit-test in isolation.
@@ -62,57 +62,6 @@ export function buildMcodeResultsText(
   })
 
   return lines.join('\n') + '\n'
-}
-
-/**
- * Slice a source network's CX2 stream down to a single cluster: keep only the
- * cluster's nodes (with coordinates overridden from `nodePositions` when
- * present, so the importer runs no layout) and the edges whose endpoints are
- * both in the cluster, and fix up the metaData element counts to match.
- *
- * Operates on the loosely-typed CX2 aspect array (`any[]`); the caller casts
- * the result to the cyweb `Cx2` type when handing it to createNetworkFromCx2.
- */
-export function sliceClusterCx2(
-  cx2: any[],
-  clusterNodeIds: string[],
-  nodePositions?: Record<string, { x: number; y: number }>,
-): any[] {
-  const clusterNodes = new Set(clusterNodeIds)
-  let nodeCount = 0
-  let edgeCount = 0
-
-  const sliced: any[] = cx2.map((aspect: Record<string, any>) => {
-    if (Array.isArray(aspect.nodes)) {
-      const nodes = aspect.nodes
-        .filter((n: any) => clusterNodes.has(String(n.id)))
-        .map((n: any) => {
-          const pos = nodePositions?.[String(n.id)]
-          return pos ? { ...n, x: pos.x, y: pos.y } : n
-        })
-      nodeCount = nodes.length
-      return { nodes }
-    }
-    if (Array.isArray(aspect.edges)) {
-      const edges = aspect.edges.filter(
-        (e: any) => clusterNodes.has(String(e.s)) && clusterNodes.has(String(e.t)),
-      )
-      edgeCount = edges.length
-      return { edges }
-    }
-    return aspect
-  })
-
-  for (const aspect of sliced) {
-    if (Array.isArray(aspect.metaData)) {
-      for (const meta of aspect.metaData as Array<{ name: string; elementCount?: number }>) {
-        if (meta.name === 'nodes' && meta.elementCount !== undefined) meta.elementCount = nodeCount
-        if (meta.name === 'edges' && meta.elementCount !== undefined) meta.elementCount = edgeCount
-      }
-    }
-  }
-
-  return sliced
 }
 
 // ── MCODE node-table columns ────────────────────────────────────────────────
