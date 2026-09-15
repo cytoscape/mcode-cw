@@ -108,7 +108,7 @@ const OptionsMenu = ({
   onDiscardSelectedResult: () => void
   onDiscardAllResults: () => void
 }): JSX.Element => {
-  const { viewSourceNetwork, applyMcodeStyle, createClusterNetwork, exportResult } =
+  const { viewSourceNetwork, applyClusterLayout, applyMcodeStyle, createClusterNetwork, exportResult } =
     useMcodeResultActions(selectedResult, selectedCluster)
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
@@ -130,6 +130,10 @@ const OptionsMenu = ({
   const handleViewSourceNetwork = () => {
     handleOptionsClose()
     viewSourceNetwork()
+  }
+  const handleApplyClusterLayout = () => {
+    handleOptionsClose()
+    applyClusterLayout()
   }
   const handleApplyMcodeStyle = () => {
     handleOptionsClose()
@@ -198,6 +202,15 @@ const OptionsMenu = ({
         >
           <Typography component="span" sx={{ pl: 3.25 }}>
             View Source Network
+          </Typography>
+        </MenuItem>
+        <Divider sx={{ my: 0.5 }} />
+        <MenuItem
+          disabled={!selectedResult}
+          onClick={handleApplyClusterLayout}
+        >
+          <Typography component="span" sx={{ pl: 3.25 }}>
+            Apply Cluster Layout
           </Typography>
         </MenuItem>
         {/*<MenuItem

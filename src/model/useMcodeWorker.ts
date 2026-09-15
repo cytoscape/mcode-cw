@@ -25,6 +25,10 @@
  * adjacency map with no DOM / React / cyweb dependencies, so the worker bundle
  * contains only the algorithm.
  *
+ * The cluster layout (src/layout/) runs in the same worker module through
+ * `clusterLayoutWorker.ts`, one short-lived worker per run, since the host's
+ * layout slot has no cancel channel to keep a worker around for.
+ *
  * Trade-offs we accept: inputs/outputs cross by structured-clone copy via
  * postMessage (fine — they're plain/cloneable), and because the algorithm
  * instance lives in the worker, its scored state is returned as a serializable
@@ -36,10 +40,9 @@
  */
 import { useCallback, useEffect, useRef } from 'react'
 
-import McodeWorkerInline from './mcode.worker?worker&inline'
-
 import { MCODEAlgorithm } from './mcodeAlgorithm'
 import { AdjacencyMap, MCODECluster, MCODEParameters } from './mcodeTypes'
+import { createMcodeWorker } from './mcodeWorkerFactory'
 import { MCODEWorkerRequest, MCODEWorkerResponse } from './mcodeWorkerTypes'
 
 /** Rejection raised when an in-flight analysis is cancelled by the user. */
@@ -62,67 +65,8 @@ type Pending = {
   reject: (error: Error) => void
 }
 
-/**
- * Path of the worker module, for DEV only. Kept in a variable (not written
- * literally inside `new URL(...)`) so Vite's asset transform does not match the
- * pattern at build time and emit the raw .ts file as an asset; the whole dev
- * branch is dead code in a production build anyway.
- */
-const DEV_WORKER_PATH = './mcode.worker.ts'
-
-/**
- * Construct the MCODE worker — without hardcoding any origin, so the same
- * code works wherever the app is served from.
- *
- * PRODUCTION: `?worker&inline` embeds the bundled worker (its import graph is
- * pure algorithm code, ~5 kB) into this chunk and constructs it from a Blob at
- * runtime. A Blob worker is same-origin by construction, so it works no matter
- * where the remote is deployed — any origin, any base path, no CORS, no URL to
- * resolve. (The alternative, `?worker&url`, emits a root-absolute `/assets/…`
- * URL because the SDK owns `base: '/'`, which breaks subpath deployments.)
- *
- * DEV: Vite serves modules unbundled, so there is nothing to inline — the
- * inline wrapper falls back to `new Worker(<dev url>)`, and that breaks
- * cross-origin: this app is a Module Federation remote whose modules are
- * served from its own dev server (e.g. :6000) while the page is the host's
- * origin (e.g. cyweb on :5500), and browsers forbid constructing a Worker
- * directly from a cross-origin script URL. So in dev we build the worker from
- * a tiny same-origin Blob module that `import`s the dev-served worker module —
- * a module import may cross origins under CORS, and the dev server already
- * sends `Access-Control-Allow-Origin: *` (the host needs it to import
- * remoteEntry.js at all).
- */
-function createMcodeWorker(): Worker {
-  if (import.meta.env.PROD) {
-    return new McodeWorkerInline({ name: 'mcode-worker' })
-  }
-
-  const workerUrl = new URL(DEV_WORKER_PATH, import.meta.url).href
-  // Log the resolved URL so it can be checked directly (browser Network tab /
-  // curl) when diagnosing load failures.
-  console.debug(`Creating MCODE worker from: ${workerUrl}`)
-
-  // The revoke frees the Blob once the module graph has loaded (static imports
-  // resolve before the module body runs) — the same trick Vite's own inline
-  // worker wrapper uses.
-  const bootstrap =
-    `import ${JSON.stringify(workerUrl)};\n` + `URL.revokeObjectURL(import.meta.url);`
-  const blobUrl = URL.createObjectURL(new Blob([bootstrap], { type: 'text/javascript' }))
-  const worker = new Worker(blobUrl, { type: 'module', name: 'mcode-worker' })
-  // A failed import of the (cross-origin) worker script surfaces here as an
-  // often-opaque error event. Echo the URL and a hint, since the event
-  // message is usually empty for cross-origin worker load failures. (The
-  // hook's onerror handler is what actually rejects the pending analysis.)
-  worker.addEventListener('error', (event) => {
-    console.error(
-      `MCODE worker failed to load from "${workerUrl}". ` +
-        'Check that the dev server serves this exact URL (HTTP 200) — a stale ' +
-        'dev server usually needs a full restart, not just HMR. ' +
-        `Worker error: ${event.message || '(no message; likely a cross-origin load failure)'}`,
-    )
-  })
-  return worker
-}
+// The worker is constructed by `createMcodeWorker` (src/model/mcodeWorkerFactory.ts),
+// which explains the dev/prod construction; the cluster layout shares it.
 
 export interface McodeWorkerController {
   run: (adjacency: AdjacencyMap, parameters: MCODEParameters) => Promise<MCODEAnalysisResult>
@@ -145,7 +89,8 @@ export function useMcodeWorker(): McodeWorkerController {
         clusters: response.clusters,
         algorithm: MCODEAlgorithm.fromSnapshot(response.snapshot),
       })
-    else pending.reject(new Error(response.message))
+    else if (response.type === 'error') pending.reject(new Error(response.message))
+    else pending.reject(new Error(`Unexpected MCODE worker response: ${response.type}`))
   })
 
   // Lazily create the worker and wire up its handlers.
@@ -179,7 +124,7 @@ export function useMcodeWorker(): McodeWorkerController {
         try {
           const worker = getWorker()
           pendingRef.current = { resolve, reject }
-          const request: MCODEWorkerRequest = { adjacency, parameters }
+          const request: MCODEWorkerRequest = { type: 'analyze', adjacency, parameters }
           worker.postMessage(request)
         } catch (err) {
           pendingRef.current = null

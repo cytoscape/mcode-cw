@@ -89,6 +89,55 @@ Two behaviors follow from this, both worth testing by hand:
    the app — `appData` is the one per-app domain the host does not clean up on
    disable. Use the panel's discard actions to drop them.
 
+## MCODE Cluster Layout (`'layout-algorithm'` slot)
+
+The app registers **Layout → MCODE Cluster Layout**, a TypeScript port of the
+Cluster Layout from MCODE 2.1.0 for Cytoscape Desktop. Each MCODE cluster is
+packed into a disk with its best-scored node in the center, unclustered nodes
+are attached as satellites to the cluster they connect to most, and the disks
+are placed by a short force-directed pass so connected clusters sit near each
+other. The host renders it in the Layout menu's app block, in
+**Layout → Settings…** with its parameters, and runs it through
+`layout.applyLayout(networkId, { algorithmName: 'mcode::cluster-layout' })`.
+
+| File | Role |
+|---|---|
+| [src/model/clusterLayoutModel.ts](src/model/clusterLayoutModel.ts) | The layout on plain arrays, line-for-line from `ClusterLayoutModel.java`; pure and unit-tested against the Java output |
+| [src/model/clusterAssignment.ts](src/model/clusterAssignment.ts) | Node → cluster index from an MCODE result or a node column |
+| [src/layout/mcodeClusterLayout.ts](src/layout/mcodeClusterLayout.ts) | The `RegisterLayoutOptions` adapter: resolves the clusters, node sizes and the previous centroid, returns positions |
+| [src/model/clusterLayoutWorker.ts](src/model/clusterLayoutWorker.ts) | Runs one layout in the MCODE web worker (a fresh worker per run, terminated on reply) |
+| [src/model/mcodeWorkerFactory.ts](src/model/mcodeWorkerFactory.ts) | Worker construction shared by the analysis hook and the layout |
+
+Cluster sources, first match wins: the `clusterColumn` parameter (distinct
+values of a node column), then the network's newest MCODE result, then — with
+`runMCODE` on — a transient MCODE run with default parameters and fluff off
+(nothing is stored, no node columns are written). With no clusters at all,
+every connected component becomes a disk. The model runs in the MCODE web
+worker, like the analysis, so a large network does not freeze the host; the
+host has no cancel channel for layouts, so each run gets its own short-lived
+worker.
+
+The MCODE panel's Options menu has **Apply Cluster Layout**, which lays out
+the selected result's source network with that result's clusters through
+`layout.applyLayout` (Desktop: the panel's "Apply Cluster Layout"). The
+layout's current Settings values apply; only the cluster source is pinned.
+
+Edge bundling is not ported: Cytoscape Web has no edge-geometry visual
+property to hold bends. See
+[docs/cluster-layout-port-plan.md](docs/cluster-layout-port-plan.md).
+
+### Requires a host with the `'layout-algorithm'` slot
+
+The slot landed in [cytoscape-web#734](https://github.com/cytoscape/cytoscape-web/pull/734)
+and ships in `@cytoscape-web/api-types` 1.0.0-beta.5. Until that version is
+published, run the host from that branch and link its locally built types as
+described below for `appData`. If `npm link` fails on the global prefix's
+permissions, a plain symlink does the same job:
+
+```bash
+rm -rf node_modules/@cytoscape-web/api-types && ln -s ../../../cytoscape-web/packages/api-types node_modules/@cytoscape-web/api-types
+```
+
 ### Requires a host with the `appData` API
 
 The API landed in [cytoscape-web#687](https://github.com/cytoscape/cytoscape-web/pull/687).

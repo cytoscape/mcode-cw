@@ -1,7 +1,8 @@
 /**
  * Actions the user can run against a selected MCODE result / cluster from the
- * options menu: view the source network, apply the MCODE visual style, create a
- * cluster subnetwork, and export the result to a text file.
+ * options menu: view the source network, apply the MCODE cluster layout or the
+ * MCODE visual style, create a cluster subnetwork, and export the result to a
+ * text file.
  *
  * These handlers are stateful (they consume Cytoscape Web API hooks), so they
  * live in a custom hook rather than a plain utility module. The pure data
@@ -11,17 +12,24 @@ import { useCallback } from 'react'
 
 import type { ApiResult, PositionRecord } from '@cytoscape-web/api-types'
 import { useElementApi } from 'cyweb/ElementApi'
+import { useLayoutApi } from 'cyweb/LayoutApi'
 import { useNetworkApi } from 'cyweb/NetworkApi'
 import { useViewportApi } from 'cyweb/ViewportApi'
 import { useVisualStyleApi } from 'cyweb/VisualStyleApi'
 import { useWorkspaceApi } from 'cyweb/WorkspaceApi'
 
+import { applyClusterLayoutToResult } from '../layout/mcodeClusterLayout'
 import { buildMcodeResultsText, ClusterExportRow, mcodeColumnName } from './mcodeExport'
 import { MCODECluster, MCODEResult } from './mcodeTypes'
 
 export interface McodeResultActions {
   /** Make the result's source network the active/shown one. */
   viewSourceNetwork: () => void
+  /**
+   * Lay out the result's source network with the MCODE Cluster Layout, using
+   * this result's clusters (whatever the layout's own cluster source is).
+   */
+  applyClusterLayout: () => void
   /** Apply the MCODE visual style to the result's source network. */
   applyMcodeStyle: () => void
   /** Create a new subnetwork from the selected cluster. */
@@ -35,6 +43,7 @@ export function useMcodeResultActions(
   selectedCluster: MCODECluster | null,
 ): McodeResultActions {
   const workspaceApi = useWorkspaceApi()
+  const layoutApi = useLayoutApi()
   const networkApi = useNetworkApi()
   const viewportApi = useViewportApi()
   const elementApi = useElementApi()
@@ -47,6 +56,16 @@ export function useMcodeResultActions(
       console.warn('Failed to switch to source network:', res.error.message)
     }
   }, [selectedResult, workspaceApi])
+
+  const applyClusterLayout = useCallback(() => {
+    if (!selectedResult) return
+    // The host runs the layout through its own engine (running flag, undo
+    // entry, viewport fit), on the result's network even when it is not the
+    // current one. Failures are reported in the result, never thrown.
+    void applyClusterLayoutToResult(layoutApi, selectedResult).then((res) => {
+      if (!res.success) console.warn('Failed to apply the cluster layout:', res.error.message)
+    })
+  }, [selectedResult, layoutApi])
 
   const applyMcodeStyle = useCallback(() => {
     if (!selectedResult) return
@@ -227,5 +246,5 @@ export function useMcodeResultActions(
     URL.revokeObjectURL(url)
   }, [selectedResult, elementApi, workspaceApi])
 
-  return { viewSourceNetwork, applyMcodeStyle, createClusterNetwork, exportResult }
+  return { viewSourceNetwork, applyClusterLayout, applyMcodeStyle, createClusterNetwork, exportResult }
 }

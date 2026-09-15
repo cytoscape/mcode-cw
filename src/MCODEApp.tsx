@@ -21,6 +21,7 @@ import { lazy } from 'react'
 import { AppContext, CyAppWithLifecycle } from 'cyweb/ApiTypes'
 import { description, displayName, id, version } from 'virtual:cyweb-app-meta'
 
+import { mcodeClusterLayout } from './layout/mcodeClusterLayout'
 import { setAppDataApi } from './model/mcodeAppData'
 
 export const MCODEApp: CyAppWithLifecycle = {
@@ -40,6 +41,11 @@ export const MCODEApp: CyAppWithLifecycle = {
       title: 'MCODE', // Tab title shown in the right panel.
       component: lazy(() => import('./components/MCODEPanel')),
     },
+    // "MCODE Cluster Layout" in the Layout menu (app block), in Layout →
+    // Settings... with its parameters, and as `mcode::cluster-layout` to
+    // `layout.applyLayout`. Requires a host with the 'layout-algorithm' slot
+    // (cytoscape-web#734); see src/layout/mcodeClusterLayout.ts.
+    { slot: 'layout-algorithm', ...mcodeClusterLayout },
   ],
 
   // ── Lifecycle hooks ────────────────────────────────────────────────────
