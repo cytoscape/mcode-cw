@@ -63,6 +63,7 @@ const MAX_SANE_COORDINATE = 1e7
 /** The Desktop layout's tunables, minus edge bundling. */
 const PARAMETERS: RegisterLayoutOptions['parameters'] = {
   runMCODE: {
+    displayName: 'Run MCODE',
     type: 'boolean',
     defaultValue: true,
     description:
@@ -70,6 +71,7 @@ const PARAMETERS: RegisterLayoutOptions['parameters'] = {
       'with its default parameters and fluff off before laying out.',
   },
   satellites: {
+    displayName: 'Satellites',
     type: 'boolean',
     defaultValue: true,
     description:
@@ -77,18 +79,21 @@ const PARAMETERS: RegisterLayoutOptions['parameters'] = {
       'When off, unclustered nodes form disks of their own.',
   },
   nodeSpacing: {
+    displayName: 'Node Spacing',
     type: 'integer',
     defaultValue: DEFAULT_CLUSTER_LAYOUT_OPTIONS.nodeSpacing,
     description: 'Gap between neighbouring nodes, in view units.',
     range: { min: 0, max: 1000 },
   },
   clusterSpacing: {
+    displayName: 'Cluster Spacing',
     type: 'integer',
     defaultValue: DEFAULT_CLUSTER_LAYOUT_OPTIONS.clusterSpacing,
     description: 'Gap between cluster disks, in view units.',
     range: { min: 0, max: 10000 },
   },
   clusterColumn: {
+    displayName: 'Cluster Column',
     type: 'string',
     defaultValue: '',
     description:
