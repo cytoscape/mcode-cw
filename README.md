@@ -108,11 +108,12 @@ other. The host renders it in the Layout menu's app block, in
 | [src/model/clusterLayoutWorker.ts](src/model/clusterLayoutWorker.ts) | Runs one layout in the MCODE web worker (a fresh worker per run, terminated on reply) |
 | [src/model/mcodeWorkerFactory.ts](src/model/mcodeWorkerFactory.ts) | Worker construction shared by the analysis hook and the layout |
 
-Cluster sources, first match wins: the `clusterColumn` parameter (distinct
-values of a node column), then the network's newest MCODE result, then — with
-`runMCODE` on — a transient MCODE run with default parameters and fluff off
-(nothing is stored, no node columns are written). With no clusters at all,
-every connected component becomes a disk. The model runs in the MCODE web
+Cluster sources, first match wins: the "Cluster Column" parameter (a node
+column of any type but double or list; its distinct values are the clusters),
+then the network's newest MCODE result, then a transient MCODE run with
+default parameters and fluff off (nothing is stored, no node columns are
+written). If that run finds no clusters, every connected component becomes a
+disk. The model runs in the MCODE web
 worker, like the analysis, so a large network does not freeze the host; the
 host has no cancel channel for layouts, so each run gets its own short-lived
 worker.

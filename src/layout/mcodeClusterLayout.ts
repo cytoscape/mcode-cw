@@ -13,22 +13,31 @@
  * Cluster sources, first match wins (mirrors `PrepareClusterLayoutTask`):
  *   0. A result preset by the MCODE panel's "Apply Cluster Layout" — see
  *      `applyClusterLayoutToResult`.
- *   1. `clusterColumn` names a node-table column: its distinct values are
- *      the clusters. Nodes are ordered by degree.
+ *   1. The "Cluster Column" parameter names a node-table column: its
+ *      distinct values are the clusters. Nodes are ordered by degree.
  *   2. The newest MCODE result for the network with at least one cluster.
  *      Nodes are ordered by their MCODE score.
- *   3. `runMCODE`: run MCODE now (in the worker) with the default parameters
- *      and fluff off, and use its clusters for this layout only — nothing is
- *      stored and no node columns are written.
- *   4. No clusters: every connected component becomes a disk of its own.
+ *   3. Run MCODE now (in the worker) with the default parameters and fluff
+ *      off, and use its clusters for this layout only — nothing is stored
+ *      and no node columns are written. (Desktop gates this behind a "Run
+ *      MCODE if the network has no result" tunable; here it always happens
+ *      when nothing else supplied clusters.)
+ *   4. No clusters found by that run: every connected component becomes a
+ *      disk of its own.
+ *
+ * Parameters follow the host's shared parameter spec (an ordered array; see
+ * docs/specifications/APP_PARAMETERS_SPECIFICATION.md in cytoscape-web): the
+ * Settings dialog shows them in this order, nested by `groups`, and `run`
+ * receives their values keyed by `displayName`, typed by the declaration.
  */
 import type {
   ApiResult,
   LayoutApi,
+  LayoutParameter,
   LayoutPositions,
   LayoutRunContext,
+  ParameterValue,
   RegisterLayoutOptions,
-  ValueType,
 } from '@cytoscape-web/api-types'
 import { id as appId } from 'virtual:cyweb-app-meta'
 
@@ -60,47 +69,66 @@ export const CLUSTER_LAYOUT_ALGORITHM_NAME = `${appId}::${CLUSTER_LAYOUT_ID}`
  */
 const MAX_SANE_COORDINATE = 1e7
 
-/** The Desktop layout's tunables, minus edge bundling. */
-const PARAMETERS: RegisterLayoutOptions['parameters'] = {
-  runMCODE: {
-    displayName: 'Run MCODE',
-    type: 'boolean',
-    defaultValue: true,
+/**
+ * The parameter labels — also the keys `run` reads the values under (the
+ * host keys a parameter by its `displayName`; none of these collide).
+ */
+const PARAM = {
+  clusterColumn: 'Cluster Column',
+  satellites: 'Satellites',
+  nodeSpacing: 'Node Spacing',
+  clusterSpacing: 'Cluster Spacing',
+} as const
+
+/**
+ * The Desktop layout's tunables, minus edge bundling, in display order.
+ * Desktop's "Run MCODE if the network has no result" is not a parameter
+ * here: with no cluster column, the layout always falls back to the
+ * network's MCODE results and runs MCODE first when there are none.
+ */
+const PARAMETERS: LayoutParameter[] = [
+  {
+    displayName: PARAM.clusterColumn,
+    type: 'nodeColumn',
+    // Cluster ids are discrete values: any column type but doubles and lists.
+    columnTypeFilter: ['string', 'long', 'integer', 'boolean'],
+    defaultValue: '',
     description:
-      'When the network has no MCODE result (and no cluster column is given), run MCODE ' +
-      'with its default parameters and fluff off before laying out.',
+      'Node column whose values name the cluster of each node. When none is chosen, ' +
+      "the network's MCODE results are used, and MCODE is run first (default parameters, " +
+      'fluff off) if the network has no results.',
+    groups: ['Clusters'],
   },
-  satellites: {
-    displayName: 'Satellites',
-    type: 'boolean',
+  {
+    displayName: PARAM.satellites,
+    type: 'checkBox',
     defaultValue: true,
     description:
       'Place each unclustered node on a ring around the cluster it has most edges to. ' +
       'When off, unclustered nodes form disks of their own.',
+    groups: ['Clusters'],
   },
-  nodeSpacing: {
-    displayName: 'Node Spacing',
-    type: 'integer',
+  {
+    displayName: PARAM.nodeSpacing,
+    type: 'text',
+    validationType: 'digits',
     defaultValue: DEFAULT_CLUSTER_LAYOUT_OPTIONS.nodeSpacing,
+    minValue: 0,
+    maxValue: 1000,
     description: 'Gap between neighbouring nodes, in view units.',
-    range: { min: 0, max: 1000 },
+    groups: ['Spacing'],
   },
-  clusterSpacing: {
-    displayName: 'Cluster Spacing',
-    type: 'integer',
+  {
+    displayName: PARAM.clusterSpacing,
+    type: 'text',
+    validationType: 'digits',
     defaultValue: DEFAULT_CLUSTER_LAYOUT_OPTIONS.clusterSpacing,
+    minValue: 0,
+    maxValue: 10000,
     description: 'Gap between cluster disks, in view units.',
-    range: { min: 0, max: 10000 },
+    groups: ['Spacing'],
   },
-  clusterColumn: {
-    displayName: 'Cluster Column',
-    type: 'string',
-    defaultValue: '',
-    description:
-      'Node column whose values name the cluster of each node. When set and present, ' +
-      'it is used instead of the MCODE results.',
-  },
-}
+]
 
 export const mcodeClusterLayout: RegisterLayoutOptions = {
   id: CLUSTER_LAYOUT_ID,
@@ -216,15 +244,17 @@ export async function runClusterLayout(context: LayoutRunContext): Promise<Layou
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function toOptions(parameters: Readonly<Record<string, ValueType>>): ClusterLayoutOptions {
+function toOptions(parameters: Readonly<Record<string, ParameterValue>>): ClusterLayoutOptions {
+  // The host hands `digits` parameters over as numbers already; the guard
+  // keeps a corrupt value from reaching the model.
   const num = (key: 'nodeSpacing' | 'clusterSpacing'): number => {
-    const value = Number(parameters[key])
+    const value = Number(parameters[PARAM[key]])
     return Number.isFinite(value) ? Math.max(0, value) : DEFAULT_CLUSTER_LAYOUT_OPTIONS[key]
   }
   return {
     nodeSpacing: num('nodeSpacing'),
     clusterSpacing: num('clusterSpacing'),
-    satellites: parameters.satellites !== false,
+    satellites: parameters[PARAM.satellites] !== false,
     iterations: DEFAULT_CLUSTER_LAYOUT_OPTIONS.iterations,
   }
 }
@@ -243,7 +273,7 @@ function resolveClusters(
 
   if (preset !== null) return fromResult(preset, index)
 
-  const columnName = String(parameters.clusterColumn ?? '').trim()
+  const columnName = String(parameters[PARAM.clusterColumn] ?? '').trim()
   if (columnName !== '') {
     const fromColumn = clustersFromColumn(context, columnName)
     if (fromColumn !== null) return toArrays(fromColumn, null, index)
@@ -255,11 +285,8 @@ function resolveClusters(
   const latest = findLatestResult(networkId)
   if (latest !== null) return fromResult(latest, index)
 
-  if (parameters.runMCODE !== false) {
-    return { mcodeParameters: { ...DEFAULT_MCODE_PARAMETERS, fluff: false } }
-  }
-
-  return toArrays({ clusterOf: new Map(), clusterCount: 0 }, null, index)
+  // No column and no result: the worker runs MCODE first, for this layout only.
+  return { mcodeParameters: { ...DEFAULT_MCODE_PARAMETERS, fluff: false } }
 }
 
 function fromResult(
