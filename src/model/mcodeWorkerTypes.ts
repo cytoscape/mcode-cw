@@ -39,14 +39,21 @@ export interface ClusterLayoutRequest {
 
 export type MCODEWorkerRequest = MCODEAnalyzeRequest | ClusterLayoutRequest
 
+/** The outcome of an MCODE run: the ranked clusters plus a snapshot of the
+ *  scored algorithm state, so the main thread can rehydrate the MCODEAlgorithm
+ *  and reuse its cached nodeInfo/scores. */
+export interface MCODERunOutcome {
+  clusters: MCODECluster[]
+  snapshot: MCODEAlgorithmSnapshot
+}
+
 /**
- * Worker → main thread: for an analysis, the ranked clusters plus a snapshot of
- * the scored algorithm state (so the main thread can rehydrate the
- * MCODEAlgorithm and reuse its cached nodeInfo/scores); for a layout, the
- * coordinates by node index and how many clusters were used. On failure, an
- * error message.
+ * Worker → main thread: for an analysis, the run outcome; for a layout, the
+ * coordinates by node index, how many clusters were used, and — when the
+ * worker had to run MCODE itself — that run's outcome, so the main thread
+ * can turn it into a result the panel shows. On failure, an error message.
  */
 export type MCODEWorkerResponse =
-  | { type: 'success'; clusters: MCODECluster[]; snapshot: MCODEAlgorithmSnapshot }
-  | { type: 'layout'; x: Float64Array; y: Float64Array; clusterCount: number }
+  | ({ type: 'success' } & MCODERunOutcome)
+  | { type: 'layout'; x: Float64Array; y: Float64Array; clusterCount: number; mcode?: MCODERunOutcome }
   | { type: 'error'; message: string }

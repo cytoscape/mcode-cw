@@ -18,12 +18,13 @@
  *   2. The newest MCODE result for the network with at least one cluster.
  *      Nodes are ordered by their MCODE score.
  *   3. Run MCODE now (in the worker) with the default parameters and fluff
- *      off, and use its clusters for this layout only — nothing is stored
- *      and no node columns are written. (Desktop gates this behind a "Run
- *      MCODE if the network has no result" tunable; here it always happens
- *      when nothing else supplied clusters.)
- *   4. No clusters found by that run: every connected component becomes a
- *      disk of its own.
+ *      off. The run becomes a regular MCODE result — in the store, with its
+ *      node columns — and the MCODE panel is opened on it, as if the user
+ *      had started a New Analysis. (Desktop gates this behind a "Run MCODE
+ *      if the network has no result" tunable; here it always happens when
+ *      nothing else supplied clusters.)
+ *   4. No clusters found by that run: nothing is stored, and every connected
+ *      component becomes a disk of its own.
  *
  * Parameters follow the host's shared parameter spec (an ordered array; see
  * docs/specifications/APP_PARAMETERS_SPECIFICATION.md in cytoscape-web): the
@@ -52,8 +53,11 @@ import {
   NO_CLUSTER,
 } from '../model/clusterLayoutModel'
 import { runClusterLayoutInWorker } from '../model/clusterLayoutWorker'
+import { MCODEAlgorithm } from '../model/mcodeAlgorithm'
+import { hydrateNetworkResults } from '../model/mcodeAppData'
+import { commitMcodeResult } from '../model/mcodeResultCommit'
 import { getMcodeResults } from '../model/mcodeResultStore'
-import { DEFAULT_MCODE_PARAMETERS, MCODEResult } from '../model/mcodeTypes'
+import { DEFAULT_MCODE_PARAMETERS, MCODECluster, MCODEResult } from '../model/mcodeTypes'
 import { ClusterLayoutRequest } from '../model/mcodeWorkerTypes'
 
 /** Slot-local id; the host qualifies it as `<appId>::cluster-layout`. */
@@ -61,6 +65,9 @@ export const CLUSTER_LAYOUT_ID = 'cluster-layout'
 
 /** The name `layout.applyLayout` takes for this algorithm. */
 export const CLUSTER_LAYOUT_ALGORITHM_NAME = `${appId}::${CLUSTER_LAYOUT_ID}`
+
+/** The `'right-panel'` resource id of the MCODE panel (see MCODEApp.resources). */
+export const MCODE_PANEL_TAB_ID = 'MCODEPanel'
 
 /**
  * Largest coordinate magnitude of a previous centroid worth preserving. A
@@ -234,6 +241,9 @@ export async function runClusterLayout(context: LayoutRunContext): Promise<Layou
   if (result.clusterCount === 0) {
     console.warn('MCODE Cluster Layout: no clusters found; nodes are placed on component disks.')
   }
+  if (result.mcode !== undefined && result.mcode.clusters.length > 0) {
+    showMcodeRun(context, result.mcode.clusters, MCODEAlgorithm.fromSnapshot(result.mcode.snapshot))
+  }
 
   const out: LayoutPositions = {}
   nodes.forEach((node, i) => {
@@ -282,11 +292,41 @@ function resolveClusters(
     )
   }
 
+  // Results persisted by an earlier session are read into the store on first
+  // sight of the network. The panel does this when it is open; the layout
+  // must too, or it would run MCODE over a result that is only a read away —
+  // and a later panel mount would then restore the stored copy over the one
+  // this run commits.
+  hydrateNetworkResults(networkId)
   const latest = findLatestResult(networkId)
   if (latest !== null) return fromResult(latest, index)
 
-  // No column and no result: the worker runs MCODE first, for this layout only.
+  // No column and no result: the worker runs MCODE first. Its run comes back
+  // with the coordinates and is committed as a result (see `showMcodeRun`).
   return { mcodeParameters: { ...DEFAULT_MCODE_PARAMETERS, fluff: false } }
+}
+
+/**
+ * The layout had to run MCODE: make that run a regular result (store + node
+ * columns) and bring the MCODE panel into view on it, so the clusters the
+ * layout was built on are not invisible. A failure to open the panel is only
+ * logged — the result is in the store either way, and the panel shows it the
+ * next time it is opened.
+ */
+function showMcodeRun(
+  context: LayoutRunContext,
+  clusters: MCODECluster[],
+  algorithm: MCODEAlgorithm,
+): void {
+  const { networkId, apis } = context
+  const result = commitMcodeResult(apis, networkId, clusters, algorithm)
+  console.debug(`MCODE Cluster Layout: ran MCODE first, result "${result.name}"`, clusters)
+
+  // Optional chaining: a host older than api-types 1.0.0-beta.5 has no panel api.
+  const opened = apis.panel?.open('right', MCODE_PANEL_TAB_ID)
+  if (opened !== undefined && !opened.success) {
+    console.warn('MCODE Cluster Layout: failed to open the MCODE panel:', opened.error.message)
+  }
 }
 
 function fromResult(
@@ -343,7 +383,10 @@ function clustersFromColumn(context: LayoutRunContext, columnName: string): Clus
   for (const row of table.data.rows) {
     const id = row.id
     if (id === undefined) continue
-    values.push([String(id), row[columnName]])
+    // Own property only: the column name is user input, and a name such as
+    // "__proto__" or "constructor" must read as "no value", not as an
+    // inherited object.
+    values.push([String(id), Object.hasOwn(row, columnName) ? row[columnName] : undefined])
   }
   return clusterAssignmentFromColumn(values)
 }

@@ -17,6 +17,7 @@ import { AdjacencyMap } from './mcodeTypes'
 import {
   ClusterLayoutRequest,
   MCODEAnalyzeRequest,
+  MCODERunOutcome,
   MCODEWorkerRequest,
   MCODEWorkerResponse,
 } from './mcodeWorkerTypes'
@@ -57,10 +58,12 @@ function layout(request: ClusterLayoutRequest): void {
   let clusterOf: Int32Array
   let clusterCount: number
   let score: Float64Array | null
+  let mcode: MCODERunOutcome | undefined
   if ('clusterOf' in request.clusters) {
     ;({ clusterOf, clusterCount, score } = request.clusters)
   } else {
-    // Transient MCODE run: its clusters serve this layout only.
+    // No clusters were known: run MCODE here, lay out with its clusters, and
+    // hand the run back so the main thread can commit it as a result.
     const adjacency: AdjacencyMap = new Map()
     for (const id of nodeIds) adjacency.set(id, [])
     for (let e = 0; e < edgeSrc.length; e++) {
@@ -70,7 +73,9 @@ function layout(request: ClusterLayoutRequest): void {
       if (s !== t) adjacency.get(t)!.push(s)
     }
     const alg = new MCODEAlgorithm(request.clusters.mcodeParameters)
-    const assignment = clusterAssignmentFromClusters(alg.run(adjacency))
+    const clusters = alg.run(adjacency)
+    mcode = { clusters, snapshot: alg.toSnapshot() }
+    const assignment = clusterAssignmentFromClusters(clusters)
     const scores = alg.getScores()
     clusterOf = new Int32Array(n).fill(NO_CLUSTER)
     score = new Float64Array(n)
@@ -83,7 +88,7 @@ function layout(request: ClusterLayoutRequest): void {
   }
 
   const result = layoutClusters(clusterOf, clusterCount, edgeSrc, edgeTgt, nodeSize, score, options)
-  ctx.postMessage({ type: 'layout', x: result.x, y: result.y, clusterCount }, [
+  ctx.postMessage({ type: 'layout', x: result.x, y: result.y, clusterCount, mcode }, [
     result.x.buffer,
     result.y.buffer,
   ])

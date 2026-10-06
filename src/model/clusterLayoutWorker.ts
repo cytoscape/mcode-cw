@@ -9,13 +9,15 @@
  * worker is terminated as soon as it answers (or fails).
  */
 import { createMcodeWorker } from './mcodeWorkerFactory'
-import { ClusterLayoutRequest, MCODEWorkerResponse } from './mcodeWorkerTypes'
+import { ClusterLayoutRequest, MCODERunOutcome, MCODEWorkerResponse } from './mcodeWorkerTypes'
 
 export interface ClusterLayoutWorkerResult {
   x: Float64Array
   y: Float64Array
   /** Clusters the layout used (zero when none were found). */
   clusterCount: number
+  /** Set when the worker ran MCODE itself to find the clusters. */
+  mcode?: MCODERunOutcome
 }
 
 export function runClusterLayoutInWorker(
@@ -29,7 +31,12 @@ export function runClusterLayoutInWorker(
       done()
       const response = event.data
       if (response.type === 'layout') {
-        resolve({ x: response.x, y: response.y, clusterCount: response.clusterCount })
+        resolve({
+          x: response.x,
+          y: response.y,
+          clusterCount: response.clusterCount,
+          mcode: response.mcode,
+        })
       } else if (response.type === 'error') {
         reject(new Error(response.message))
       } else {

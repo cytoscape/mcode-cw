@@ -110,10 +110,13 @@ other. The host renders it in the Layout menu's app block, in
 
 Cluster sources, first match wins: the "Cluster Column" parameter (a node
 column of any type but double or list; its distinct values are the clusters),
-then the network's newest MCODE result, then a transient MCODE run with
-default parameters and fluff off (nothing is stored, no node columns are
-written). If that run finds no clusters, every connected component becomes a
-disk. The model runs in the MCODE web
+then the network's newest MCODE result, then an MCODE run with default
+parameters and fluff off. That run is committed like a New Analysis — a
+result in the panel, the MCODE node columns on the network — and the right
+panel is opened on the MCODE tab (`apis.panel.open`, api-types 1.0.0-beta.5)
+so the clusters the layout was built on are in view. If that run finds no
+clusters, nothing is stored and every connected component becomes a disk.
+The model runs in the MCODE web
 worker, like the analysis, so a large network does not freeze the host; the
 host has no cancel channel for layouts, so each run gets its own short-lived
 worker.
