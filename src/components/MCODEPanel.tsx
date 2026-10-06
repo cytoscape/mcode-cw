@@ -52,9 +52,9 @@ import { JSX } from 'react/jsx-runtime'
 
 import { MCODEAlgorithm } from '../model/mcodeAlgorithm'
 import { forgetNetwork, hydrateNetworkResults } from '../model/mcodeAppData'
-import { buildMcodeNodeTableData, mcodeColumnNames } from '../model/mcodeExport'
+import { mcodeColumnNames } from '../model/mcodeExport'
+import { commitMcodeResult } from '../model/mcodeResultCommit'
 import {
-  addResult,
   discardAllResults,
   discardSelectedResult,
   NetworkEdge,
@@ -63,7 +63,6 @@ import {
   selectCluster,
   selectResult,
   syncSelectionToNetwork,
-  takeNextResultId,
   useMcodeResults,
 } from '../model/mcodeResultStore'
 import { MCODECluster, MCODEParameters, MCODEResult } from '../model/mcodeTypes'
@@ -108,7 +107,7 @@ const OptionsMenu = ({
   onDiscardSelectedResult: () => void
   onDiscardAllResults: () => void
 }): JSX.Element => {
-  const { viewSourceNetwork, applyMcodeStyle, createClusterNetwork, exportResult } =
+  const { viewSourceNetwork, applyClusterLayout, applyMcodeStyle, createClusterNetwork, exportResult } =
     useMcodeResultActions(selectedResult, selectedCluster)
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
@@ -130,6 +129,10 @@ const OptionsMenu = ({
   const handleViewSourceNetwork = () => {
     handleOptionsClose()
     viewSourceNetwork()
+  }
+  const handleApplyClusterLayout = () => {
+    handleOptionsClose()
+    applyClusterLayout()
   }
   const handleApplyMcodeStyle = () => {
     handleOptionsClose()
@@ -198,6 +201,15 @@ const OptionsMenu = ({
         >
           <Typography component="span" sx={{ pl: 3.25 }}>
             View Source Network
+          </Typography>
+        </MenuItem>
+        <Divider sx={{ my: 0.5 }} />
+        <MenuItem
+          disabled={!selectedResult}
+          onClick={handleApplyClusterLayout}
+        >
+          <Typography component="span" sx={{ pl: 3.25 }}>
+            Apply Cluster Layout
           </Typography>
         </MenuItem>
         {/*<MenuItem
@@ -898,39 +910,11 @@ const MCODEPanel = (): JSX.Element => {
       setSaving(true)
       await new Promise((resolve) => setTimeout(resolve))
 
-      // 4. Build the result. The name is "{ID} - {network name}" where ID is
-      //    the store's monotonically increasing result id.
-      const summary = workspaceApi.getNetworkSummary(currentNetworkId)
-      const networkName = summary.success ? summary.data.name : currentNetworkId
-      const id = takeNextResultId()
-      const newResult: MCODEResult = {
-        id,
-        name: `${id} - ${networkName}`,
-        networkId: currentNetworkId,
-        algorithm,
-        clusters,
-      }
-      addResult(newResult)
+      // 4. Build the result ("{ID} - {network name}", selected in the store)
+      //    and write the MCODE node columns. Shared with the cluster layout,
+      //    which commits its own MCODE run the same way.
+      commitMcodeResult({ table: tableApi, workspace: workspaceApi }, currentNetworkId, clusters, algorithm)
       console.debug(`MCODE found ${clusters.length} cluster(s)`, clusters)
-
-      // 5. Add the MCODE result columns to the source network's node table:
-      //    "MCODE::Score (n)", "MCODE::Node Status (n)", "MCODE::Clusters (n)".
-      const { columns, rows } = buildMcodeNodeTableData(id, clusters, algorithm.getScores())
-      for (const col of columns) {
-        const created = tableApi.createColumn(currentNetworkId, 'node', col.name, col.type, col.defaultValue)
-        if (!created.success) {
-          console.warn(`Failed to create node column "${col.name}":`, created.error.message)
-        }
-      }
-      console.debug('Writing MCODE node column values...', rows)
-      const cellEdits = Object.entries(rows).flatMap(([nodeId, values]) =>
-        Object.entries(values).map(([column, value]) => ({ id: nodeId, column, value })),
-      )
-      const edited = tableApi.setValues(currentNetworkId, 'node', cellEdits)
-      console.debug('Finished writing MCODE node column values--Success:', edited.success)
-      if (!edited.success) {
-        console.warn('Failed to write MCODE node column values:', edited.error.message)
-      }
     } finally {
       setAnalyzing(false)
       setSaving(false)
