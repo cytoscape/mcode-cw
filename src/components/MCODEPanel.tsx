@@ -1119,6 +1119,10 @@ const MCODEPanel = (): JSX.Element => {
           sx={{
             backgroundImage: 'none',
             boxShadow: 'none',
+            borderTop: (theme) => `2px solid ${theme.palette.divider}`,
+            '&.Mui-expanded': {
+              mt: 0,
+            },
           }}
         >
           <AccordionSummary
@@ -1128,7 +1132,6 @@ const MCODEPanel = (): JSX.Element => {
               minHeight: '40px', // collapsed summary height
               '&.Mui-expanded': {
                 minHeight: '40px', // expanded summary height
-                borderTop: (theme) => `1px solid ${theme.palette.divider}`,
               },
               '.MuiAccordionSummary-content': {
                 marginTop: '12px !important',
