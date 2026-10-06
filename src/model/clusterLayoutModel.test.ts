@@ -241,9 +241,12 @@ test('the cancel callback stops the placement pass early but still yields positi
   const g = graph([10, 10, 10, 10], 0, 80, 7)
   const r = run(g, 4)
   const r2 = layoutClusters(g.clusterOf, 4, g.src, g.tgt, sizes(40), null, options(), () => true)
-  // Same geometry (disk radii), all positions finite, but the placement differs.
+  // Same geometry (disk radii), all positions finite, but the placement
+  // differs: the cancelled run keeps the initial circle (after the final
+  // separation passes), the full run has been pulled together by gravity.
   assert.deepEqual(r2.clusterRadius, r.clusterRadius)
   for (let i = 0; i < 40; i++) assert.ok(Number.isFinite(r2.x[i]) && Number.isFinite(r2.y[i]))
+  assert.notDeepEqual(r2.clusterX, r.clusterX)
 })
 
 test('ring capacity follows floor(2πr / step)', () => {

@@ -197,7 +197,6 @@ export async function runClusterLayout(context: LayoutRunContext): Promise<Layou
   // broken by inside the model.
   const index = new Map<string, number>()
   nodes.forEach((node, i) => index.set(node.id, i))
-  const n = nodes.length
 
   const src: number[] = []
   const tgt: number[] = []
@@ -214,17 +213,20 @@ export async function runClusterLayout(context: LayoutRunContext): Promise<Layou
   const clusters = resolveClusters(context, preset?.networkId === networkId ? preset : null, index)
   const nodeSize = nodeSizes(context)
 
-  // Previous centroid, kept only when it is finite and reasonable.
+  // Previous centroid of the nodes that have a position (a node without a
+  // view has none), kept only when it is finite and reasonable.
   let cx = 0
   let cy = 0
+  let positioned = 0
   for (const node of nodes) {
     const pos = positions[node.id]
     if (pos === undefined) continue
     cx += pos[0]
     cy += pos[1]
+    positioned++
   }
-  cx /= Math.max(1, n)
-  cy /= Math.max(1, n)
+  cx /= Math.max(1, positioned)
+  cy /= Math.max(1, positioned)
   if (!(Math.abs(cx) < MAX_SANE_COORDINATE && Math.abs(cy) < MAX_SANE_COORDINATE)) {
     cx = 0
     cy = 0

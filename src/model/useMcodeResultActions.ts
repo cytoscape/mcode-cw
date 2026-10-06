@@ -61,10 +61,13 @@ export function useMcodeResultActions(
     if (!selectedResult) return
     // The host runs the layout through its own engine (running flag, undo
     // entry, viewport fit), on the result's network even when it is not the
-    // current one. Failures are reported in the result, never thrown.
-    void applyClusterLayoutToResult(layoutApi, selectedResult).then((res) => {
-      if (!res.success) console.warn('Failed to apply the cluster layout:', res.error.message)
-    })
+    // current one. Failures come back in the result; the catch covers a host
+    // that throws instead (e.g. one without the Layout API method).
+    void applyClusterLayoutToResult(layoutApi, selectedResult)
+      .then((res) => {
+        if (!res.success) console.warn('Failed to apply the cluster layout:', res.error.message)
+      })
+      .catch((err: unknown) => console.warn('Failed to apply the cluster layout:', err))
   }, [selectedResult, layoutApi])
 
   const applyMcodeStyle = useCallback(() => {

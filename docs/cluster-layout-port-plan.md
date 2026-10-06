@@ -135,33 +135,36 @@ Exports one `RegisterLayoutOptions` object, `mcodeClusterLayout`, and no
 React. Responsibilities, in the order `ClusterLayoutTask` /
 `PrepareClusterLayoutTask` perform them:
 
-**Parameters** (mirror `ClusterLayoutContext`; `bundleEdges` dropped):
+**Parameters** (mirror `ClusterLayoutContext`; `bundleEdges` dropped, and
+`runMCODE` folded into the cluster-source rule below), in the host's array
+parameter spec, keyed by `displayName`:
 
-| name | type | default | description |
+| displayName | type | default | description |
 |---|---|---|---|
-| `runMCODE` | boolean | true | Run MCODE if the network has no result |
-| `satellites` | boolean | true | Attach unclustered nodes to their most connected cluster |
-| `nodeSpacing` | integer | 20 | Node spacing (clamped ≥ 0) |
-| `clusterSpacing` | integer | 100 | Cluster spacing (clamped ≥ 0) |
-| `clusterColumn` | string | `''` | Node column naming the cluster of each node (overrides MCODE results) |
+| `Cluster Column` | nodeColumn (string, long, integer, boolean columns) | none | Node column naming the cluster of each node (overrides MCODE results) |
+| `Satellites` | checkBox | true | Attach unclustered nodes to their most connected cluster |
+| `Node Spacing` | text, digits | 20 | Node spacing (clamped ≥ 0) |
+| `Cluster Spacing` | text, digits | 100 | Cluster spacing (clamped ≥ 0) |
 
 **Cluster source**, first match wins:
 
-1. `clusterColumn` non-empty and present on the node table → distinct trimmed
+0. The result preset by the panel's "Apply Cluster Layout" (phase 3), which
+   passes the *selected* result, not the newest, as the Java panel does.
+1. `Cluster Column` chosen and present on the node table → distinct trimmed
    non-empty values, indexed in lexicographic order (`fromColumn`); `score = null`.
 2. Newest result for `networkId` in `mcodeResultStore` with non-empty
-   clusters → `clusterOf` from the cluster list in rank order, first cluster
-   to claim a node wins (`NodeClusterMap.fromResult`); `score` from
-   `result.algorithm.getScores()` (no table read needed, unlike Java).
-3. `runMCODE` → run `MCODEAlgorithm` with `DEFAULT_MCODE_PARAMETERS` and
-   `fluff: false` on the adjacency built from `context.edges`, and use the
-   clusters **transiently** (not stored, no node columns). See phase 4 for
-   promoting this to a real result.
-4. Otherwise `clusterCount = 0`; the model places everything on component
-   disks / the isolated grid, and the adapter logs the Java warning.
-
-Note the Java panel's "Apply Cluster Layout" passes the *selected* result,
-not the newest. Phase 3 covers that.
+   clusters (stored results are hydrated first) → `clusterOf` from the
+   cluster list in rank order, first cluster to claim a node wins
+   (`NodeClusterMap.fromResult`); `score` from `result.algorithm.getScores()`
+   (no table read needed, unlike Java).
+3. Otherwise run `MCODEAlgorithm` with `DEFAULT_MCODE_PARAMETERS` and
+   `fluff: false` in the worker, lay out with its clusters, and **commit the
+   run as a regular result** (store + node columns, `mcodeResultCommit.ts`),
+   then open the right panel on the MCODE tab (`apis.panel?.open`). Matches
+   Java, where the layout runs `MCODEAnalyzeCommandTask`.
+4. No clusters found by that run: nothing is stored; the model places
+   everything on component disks / the isolated grid, and the adapter logs
+   the Java warning.
 
 **Node sizes**: `apis.visualStyle.getDefault(networkId, 'nodeWidth' | 'nodeHeight')`
 plus `getBypasses` for both, per node `max(width, height)`. Size mappings are
@@ -185,7 +188,7 @@ resources: [
 ```
 
 It appears as **Layout → MCODE Cluster Layout** in the app block, in
-Layout → Settings… with the five parameters, and as
+Layout → Settings… with the four parameters, and as
 `mcode::cluster-layout` to `applyLayout`. If the app must keep working on a
 host without the slot, register imperatively in `mount()` instead, guarded by
 `apis.resource.getSupportedSlots()`. Declarative first; this app already
@@ -213,12 +216,12 @@ Java's MCODE panel Options menu has "Apply Cluster Layout" that lays out the
 
 The model is synchronous. `placeClusters` is O(c² · iterations) with the
 iteration cap, so a few hundred clusters take well under a second in JS, but a
-large network with many component disks, or MCODE itself under `runMCODE`,
-can block the host for seconds. The host awaits a Promise, so:
+large network with many component disks, or the MCODE run of cluster
+source 3, can block the host for seconds. The host awaits a Promise, so:
 
 1. Extend `mcode.worker.ts` with a second request type,
    `{ type: 'layout', ... }`, carrying the typed arrays (transferable) and
-   returning `x`/`y`. `MCODEAlgorithm` already runs there for `runMCODE`.
+   returning `x`/`y`. `MCODEAlgorithm` already runs there for the analysis.
 2. The existing `useMcodeWorker` is a React hook; `run` executes outside
    React. Factor the worker construction (`createMcodeWorker`) and a
    promise-per-message helper into a plain module, and have both the hook
@@ -228,10 +231,6 @@ can block the host for seconds. The host awaits a Promise, so:
 
 Optional follow-ups, each small:
 
-- Promote `runMCODE`'s transient run to a real result (add it to the store
-  with the node columns), which needs the "create result" code lifted out of
-  `MCODEPanel.tsx` (around the `buildMcodeNodeTableData` call) into a model
-  function. Matches Java, where the layout runs `MCODEAnalyzeCommandTask`.
 - `selectedOnly` boolean parameter: lay out only `selectedNodeIds` and omit
   the rest from the returned map.
 - `threshold` on the registration if the un-workered version proves slow.
@@ -243,7 +242,7 @@ Optional follow-ups, each small:
 - `npm test` — the ported model tests plus the golden fixture.
 - `npm run typecheck` against the linked beta.5 types.
 - In the host: Layout menu row present and greyed out with no network;
-  Settings… shows the five parameters and "Set as default" works; Apply
+  Settings… shows the four parameters and "Set as default" works; Apply
   Default Layout and the floating toolbar button run it; undo restores the
   previous positions; results laid out match Cytoscape Desktop on
   `galFiltered` by eye (same disk order, best-scored node centred).
