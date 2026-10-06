@@ -52,7 +52,10 @@ export const InfoIcon = makeIcon(
   'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z',
 )
 
-export const MenuIcon = makeIcon('MenuIcon', 'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z')
+export const MoreVertIcon = makeIcon(
+  'MoreVertIcon',
+  'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
+)
 
 export const PaletteIcon = makeIcon(
   'PaletteIcon',

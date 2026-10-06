@@ -36,7 +36,7 @@ import {
   ExpandLessIcon,
   FileDownloadIcon,
   InfoIcon,
-  MenuIcon,
+  MoreVertIcon,
   PaletteIcon,
 } from './icons'
 
@@ -178,7 +178,7 @@ const OptionsMenu = ({
           <IconButton
             onClick={handleOptionsClick}
           >
-            <MenuIcon />
+            <MoreVertIcon />
           </IconButton>
         </span>
       </Tooltip>
