@@ -25,7 +25,7 @@
   ],
   "cyweb": {
     "id": "mcode",
-    "displayName": "MCODE",
+    "displayName": "MCODE Web",
     "port": 6600
   },
   "scripts": {
